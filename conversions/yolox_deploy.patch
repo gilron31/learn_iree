@@ -1,0 +1,18 @@
+diff --git a/yolox/models/yolo_head.py b/yolox/models/yolo_head.py
+index 3e51768..868b92a 100644
+--- a/yolox/models/yolo_head.py
++++ b/yolox/models/yolo_head.py
+@@ -202,12 +202,12 @@ class YOLOXHead(nn.Module):
+                 dtype=xin[0].dtype,
+             )
+         else:
+-            self.hw = [x.shape[-2:] for x in outputs]
+             # [batch, n_anchors_all, 85]
+             outputs = torch.cat(
+                 [x.flatten(start_dim=2) for x in outputs], dim=2
+             ).permute(0, 2, 1)
+             if self.decode_in_inference:
++                self.hw = [x.shape[-2:] for x in outputs]
+                 return self.decode_outputs(outputs, dtype=xin[0].type())
+             else:
+                 return outputs

@@ -1,0 +1,15 @@
+clean_clones/
+builds/
+data/
+models/
+ghidra/
+*.mlir
+*.vmfb
+*.so
+*.bin
+*.fb
+*.qcow2
+*.img
+qemu/raspberry_pi_exp_1/user-data
+qemu/raspberry_pi_exp_1/meta-data
+venv*/
