@@ -78,5 +78,6 @@ A way to test that the runtime and model work correctly and reasonably fast.
 - [ ] Also compare to torch.compile()
 - [ ] Using tracy, get an op-wise bisection of the runtime. compare the the other tools in tflite/torch.
 ## Tier 2 - Cross-compilation (armv6)
+- [ ] First, compile and run a hello_world C program on the emulated environment. 
 - [ ] Be able to compile a runtime and a `.vmfb` to run them in the armv8 in the QEMU. 
-- [ ] 
+- [ ] Gain familiarity with static/dynamic linkage issues. 
