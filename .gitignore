@@ -13,3 +13,4 @@ ghidra/
 qemu/raspberry_pi_exp_1/user-data
 qemu/raspberry_pi_exp_1/meta-data
 venv*/
+build*/
