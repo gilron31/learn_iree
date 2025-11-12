@@ -1,35 +1,42 @@
 We will test the following models:
+
 - MobileNetV2
 - WhisperTiny
 - QuartzNet
-All with a f32 and f16 variants. 
+All with a f32 and f16 variants.
 
 Possible examination points:
-- [ ] `iree-benchmark-module` vs running in a loop in python. 
-	- In general, try to track down possible points of overhead. 
-	- What is the runtime overhead?
+
+- [ ] `iree-benchmark-module` vs running in a loop in python.
+  - In general, try to track down possible points of overhead.
+  - What is the runtime overhead?
 - [x] Beware of multithreading. use `taskset 01`
-	- IREE bypasses taskset, use `--task_topology_cpu_ids=0`
+  - IREE bypasses taskset, use `--task_topology_cpu_ids=0`
 - [ ] Play with compilation flags:
-	- Mainly `-O3`.
+  - Mainly `-O3`.
 - [ ] run under `perf stat -d` or `perf record`
-	- [ ] My cpu doe
+  - [ ] My cpu doe
 - [ ] run under tracy
-- [ ] Compare to TFLite. 
+- [ ] Compare to TFLite.
 - [ ] Compare to Torch and Torch.compile.
 
 ## MobileNetV2
+
 Previously converted to `.mlir`.
 Start with compiling to `.vmfb`:
+
 ```bash
 ./builds/build_compiler_and_runtime_vanilla_v3.8.0/tools/iree-compile --iree-hal-target-device=local --iree-hal-local-target-device-backends=llvm-cpu --iree-llvmcpu-target-cpu=host --iree-opt-level=O3 ./conversions/converted_mlirs/mobilenetv2_f32.mlir -o ./conversions/compiled_vmfbs/mobilenetv2_f32_O3.vmfb
 ```
+
 Now run it:
+
 ```bash
 ./builds/build_compiler_and_runtime_vanilla_v3.8.0/tools/iree-benchmark-module --device=local-task --module=./conversions/compiled_vmfbs/mobilenetv2_f32_O3.vmfb --function=main --input="1x3x224x224xf32"
 ```
 
 output:
+
 ```bash
 -----------------------------------------------------------------------------------------
 Benchmark                               Time             CPU   Iterations UserCounters...
@@ -40,9 +47,10 @@ BM_main/process_time/real_time       5.35 ms         32.7 ms          128 items_
 It is pretty lacking, doing the math we find out that `1/5.35ms = 186.9/s`. And it seems like we did 128 iterations. But what is CPU time?
 
 ### Are we running multicore by default?
-- Very much yes. 
+
+- Very much yes.
 - I ran with `--benchmark_min_time=5s` and took time to look at the `htop`. Indeed I see about 8 cores running and 10 child processes.
-- When I try to run under `taskset -a -c 0` (which is supposed to constraint it to run on core 0 only) it doesn't work (exact same timing and processes). Apparently taskset is kind of like an initial recommendation for the threads that run under it. The program can change the affinity of it's child threads manually (buzzwords like `pthread_setaffinity_np()` and `sched_setaffinity()`). 
+- When I try to run under `taskset -a -c 0` (which is supposed to constraint it to run on core 0 only) it doesn't work (exact same timing and processes). Apparently taskset is kind of like an initial recommendation for the threads that run under it. The program can change the affinity of it's child threads manually (buzzwords like `pthread_setaffinity_np()` and `sched_setaffinity()`).
 - Looking into the benchmark `--help` I spotted an option `--task_topology_cpu_ids=` which seems nice. I ran a bit of experiments:
 
 | # cpus   | rate (1/s) | rate per core |
@@ -59,60 +67,95 @@ It is pretty lacking, doing the math we find out that `1/5.35ms = 186.9/s`. And 
 | 10       | 160        | 16            |
 | 11       | 173        | 16            |
 | no limit | 180        | -             |
+
 - From now on we will strictly work with `--task_topology_cpu_ids=0`, meaning, only a single cpu core (number 0).
 - Possible follow-up questions:
-	- Other flags for the benchmark that are might worth to go into.
-		- `--task_topology_group_count=`
-		- `--task_topology_mode=` 
-		- `--task_topology_performance_level=`
+  - Other flags for the benchmark that are might worth to go into.
+    - `--task_topology_group_count=`
+    - `--task_topology_mode=`
+    - `--task_topology_performance_level=`
 
-From now on I am running everything with ` --benchmark_min_time=5s --task_topology_cpu_ids=0`.
+From now on I am running everything with `--benchmark_min_time=5s --task_topology_cpu_ids=0`.
 
 ### More flag experimentation
+
 - `--batch_size=1000000`
-	- Scales the performace linearly, unbounded (tried 10^6) which makes me think i don't understand what is it doing. 
+  - Scales the performace linearly, unbounded (tried 10^6) which makes me think i don't understand what is it doing.
 - `--print_statistics`
-	- prints some memory usage statistics that seem too large too mean anything:
+  - prints some memory usage statistics that seem too large too mean anything:
+
 ```
 [[ iree_hal_allocator_t memory statistics ]]
   HOST_LOCAL:            0B peak /            0B allocated /            0B freed /            0B live
 DEVICE_LOCAL:      8181760B peak /   2942479872B allocated /   2942479872B freed /            0B live
 ```
--  `--benchmark_{report|display}_aggregates_only={false|true}` does nothing...
+
+- `--benchmark_{report|display}_aggregates_only={false|true}` does nothing...
 
 ### `--iree-opt-level`
+
 I ran three experiments, compiling MobileNetV2 with O0, O1, O3 and they all had exactly the same benchmark. What is going on here?
 Oh wait, the vmfbs all have the exact same size...
 
 ### Now I am RTFM-ing
-https://iree.dev/developers/performance/profiling-cpu-events/
 
+<https://iree.dev/developers/performance/profiling-cpu-events/>
 
 ### Tracy
-I remember from past experience that it was a pain to get it working but that it was quite impressive and helpful at the end. I will not go into that rabbit hole right now. 
 
-Ok let's go
+I remember from past experience that it was a pain to get it working but that it was quite impressive and helpful at the end. I will not go into that rabbit hole right now.
 
-### Compiling WhisperTiny
+Ok let's go:
 
-Running 
-```bash
-./builds/build_compiler_and_runtime_vanilla_v3.8.0/tools/iree-compile --iree-hal-target-device=local --iree-hal-local-target-device-backends=llvm-cpu --iree-llvmcpu-target-cpu=host --iree-opt-level=O3 ./conversions/converted_mlirs/whisper_tiny_f32.mlir -o ./conversions/compiled_vmfbs/whisper_tiny_f32_O3.vmfb
-```
-I get a compilation error:
+1. So first you gotta build the tracy server:
+   1. Created `builds/tracy_vanilla_build`
+   2. Configure cmake: `cmake -B builds/tracy_vanilla_build/ -S clean_clones/iree/third_party/tracy/profiler -DCMAKE_BUILD_TYPE=Release`.
+   3. Building `cmake --build builds/tracy_vanilla_build/ --parallel --config Release` Takes approx 20s.
+   4. Run the server `./builds/tracy_vanilla_build/tracy-profiler &` and keep it running
+2. Then you need to build iree runtime (`iree-run-module` and `iree-run-benchmark`) with `cmake -G Ninja -S ../../clean_clones/iree -B . -DCMAKE_BUILD_TYPE=RelWithDebInfo -DIREE_ENABLE_RUNTIME_TRACING=ON`
+   1. Maybe I also need to build the compiler... Ok let's try that `cmake --build ./builds/build_v3.8.0_tracy/ -j10 -t iree-compile`.
+3. Then you are supposed to run a benchmark or a run-module (where the executable was from the special "tracy" build of iree), prefixed with `TRACY_NO_EXIT=1`.
+4. The server indeed detected the program profiled but I consistently got an `_**buffer overflow detected**_ : terminated Aborted (core dumped)`when I tried to open the profile.
+   1. I tried to compile a newer version of tracy (not the default one from the `third_party` of iree.)
+      1. the latest 0.13.0 version has build bugs (wont compile)
+      2. the 0.12.0 does compile but there is an incompatibility - you have to be matched with whatever is compiled with iree.
 
-```
-./conversions/converted_mlirs/whisper_tiny_f32.mlir:143:11: error: 'func.func' op exceeded stack allocation limit of 32768 bytes for function. Got 48256 bytes
-    %30 = torch.aten.layer_norm %26, %27, %28, %29, %float1.000000e-05, %true : !torch.vtensor<[1,1500,384],f32>, !torch.list<int>, !torch.vtensor<[384],f32>, !torch.vtensor<[384],f32>, !torch.float, !torch.bool -> !torch.vtensor<[1,1500,384],f32>
-```
+#### The solution
 
-seems like an easy fix given the optional flag `--iree-llvmcpu-stack-allocation-limit=65536`. 
+1. I changed the tracy commit inside iree to be 12.2.
+2. Recompiled both `iree-run-module` and `tracy_profile`
+3. And it worked!
+4. I guess it means that the problem was with tracy version.
 
-Indeed it worked (both for f16 and f32)!
-# Comparing models 
-Compiled each of the three models twice, once for f32 and once for f16. 
+#### OMG tracy is amazing
+
+![[Pasted image 20251112123625.png]]
+
+- You can zoom in on:
+ 	- specific time ranges
+ 	- specific threads
+- You can generate both flame-graphs, and top-down statistics
+- Everything seems pretty detailed and accurate.
+- You can easily see runtime overhead.
+- There is a total memory usage graph below.
+![[Pasted image 20251112131626.png]]
+- For each function, you can see
+ 	- call count
+ 	- cumulative time
+ 	- **runtime histogram!**
+ 	- See the mlir source it was defined in!
+ 	- You can even look at src and assembly, but that is only for runtime functions (which are written in c, not the interesting )
+A comparison of whispertiny with fp32 (yellow) fp16 (red) on my cpu (x86, fp16 is slower).
+What we see is a comparison of runtime histograms of the function at hand (some conv).
+
+![[Pasted image 20251112163428.png]]
+
+# Comparing models
+
+Compiled each of the three models twice, once for f32 and once for f16.
 
 Ran all of them with:
+
 ```bash
 ./builds/build_compiler_and_runtime_vanilla_v3.8.0/tools/iree-benchmark-module --device=local-task --module=./conversions/compiled_vmfbs/...vmfb --function=main --input=... --benchmark_min_time=5s --task_topology_cpu_ids=0
 ```
@@ -126,9 +169,43 @@ Ran all of them with:
 | WhisperTiny | fp32    | 0.22       |
 | WhisperTiny | fp16    | 0.14 :(    |
 So...
-- All are slower with FP16, which might make sense if my CPU doesn't have good support for them. 
+
+- All are slower with FP16, which might make sense if my CPU doesn't have good support for them.
 - WhisperTiny is slower than torch by a factor of approx 20x.
-- 
+
+## I created a `Makefile`
+
+Now you can run
+`make benchmark_all`
+or
+`make benchmark_tracy_all`
+
+And it will automatically:
+
+- convert each model to mlir
+- compile to vmfb
+- benchmark w/wo tracy
+
+A big pinuk.
+
+### Compiling WhisperTiny
+
+Running
+
+```bash
+./builds/build_compiler_and_runtime_vanilla_v3.8.0/tools/iree-compile --iree-hal-target-device=local --iree-hal-local-target-device-backends=llvm-cpu --iree-llvmcpu-target-cpu=host --iree-opt-level=O3 ./conversions/converted_mlirs/whisper_tiny_f32.mlir -o ./conversions/compiled_vmfbs/whisper_tiny_f32_O3.vmfb
+```
+
+I get a compilation error:
+
+```
+./conversions/converted_mlirs/whisper_tiny_f32.mlir:143:11: error: 'func.func' op exceeded stack allocation limit of 32768 bytes for function. Got 48256 bytes
+    %30 = torch.aten.layer_norm %26, %27, %28, %29, %float1.000000e-05, %true : !torch.vtensor<[1,1500,384],f32>, !torch.list<int>, !torch.vtensor<[384],f32>, !torch.vtensor<[384],f32>, !torch.float, !torch.bool -> !torch.vtensor<[1,1500,384],f32>
+```
+
+seems like an easy fix given the optional flag `--iree-llvmcpu-stack-allocation-limit=65536`.
+
+Indeed it worked (both for f16 and f32)!
 
 # Appendix - My CPU
 
@@ -190,12 +267,15 @@ Vulnerabilities:
 ```
 
 ### Sadly, my laptop does not have `perf`
-Something with kernel versions. Probably fixable but a rabbithole indeed 
-https://bugs.launchpad.net/ubuntu/+source/linux-hwe-6.14/+bug/2117147#:~:text=Bug%20Description,corresponding%20perf%20and%20bpftool%20binaries.
+
+Something with kernel versions. Probably fixable but a rabbithole indeed
+<https://bugs.launchpad.net/ubuntu/+source/linux-hwe-6.14/+bug/2117147#:~:text=Bug%20Description,corresponding%20perf%20and%20bpftool%20binaries>.
 
 I also tried to install AMDuProf,
+
 ```
 N: Download is performed unsandboxed as root as file '/home/gilro/Downloads/amduprof_5.1-701_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
 ```
+
 chmod fixed it.
-But the profile wasn't helpful, maybe i should try again with debug symbols. 
+But the profile wasn't helpful, maybe i should try again with debug symbols.

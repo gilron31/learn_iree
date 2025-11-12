@@ -9,7 +9,7 @@ git submodule update --init --recursive
 cmake -G Ninja -S ../../clean_clones/iree -B . 
 ```
 
-- Building the runtime was pretty fast (~15s) `cmake --build . -j8 -t iree-runtime
+- Building the runtime was pretty fast (~15s) `cmake --build . -j8 -t iree-runtime`
 - Building the compiler is harder, will probably take around 1h.  `cmake --build . -j8 -t iree-compile`
 - `python3 -m venv venv_online_everything`
 - `pip install iree-base-compiler==3.8.0`
