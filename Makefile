@@ -12,7 +12,7 @@ IREE_DEFAULT_COMPILE_FLAGS = --iree-hal-target-device=local --iree-hal-local-tar
 IREE_DEBUG_COMPILE_FLATS = --iree-hal-executable-debug-level=3
 IREE_BENCHMARK_FLAGS = --benchmark_min_time=2.0s --task_topology_cpu_ids=0
 MOBILENETV2_INPUT_SHAPE = 1x3x224x224
-QUARTZNET_INPUT_SHAPE = 1x80x128
+QUARTZNET_INPUT_SHAPE = 1x300x128
 WHISPER_TINY_INPUT_SHAPE = 1x80x3000
 
 TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
@@ -76,4 +76,11 @@ benchmark_tracy_all:
 	$(MAKE) FP=16 APP_NAME=whisper_tiny benchmark_tracy
 	$(MAKE) FP=32 APP_NAME=whisper_tiny benchmark_tracy
 
+benchmark_all:
+	$(MAKE) FP=16 APP_NAME=mobilenetv2 benchmark
+	$(MAKE) FP=32 APP_NAME=mobilenetv2 benchmark
+	$(MAKE) FP=16 APP_NAME=quartznet benchmark
+	$(MAKE) FP=32 APP_NAME=quartznet benchmark
+	$(MAKE) FP=16 APP_NAME=whisper_tiny benchmark
+	$(MAKE) FP=32 APP_NAME=whisper_tiny benchmark
 
