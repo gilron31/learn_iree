@@ -14,27 +14,47 @@ MOBILENETV2_INPUT_SHAPE = 1x3x224x224
 QUARTZNET_INPUT_SHAPE = 1x80x128
 WHISPER_TINY_INPUT_SHAPE = 1x80x3000
 
-.PHONY: all_mlir_conversions_fp16 all_mlir_conversions_fp32 all_mlir_conversions_impl
 
-./conversions/converted_mlirs/mobilenetv2_fp$(FP).mlir: ./conversions/mobilenetv2_convert.py
-	python ./conversions/mobilenetv2_convert.py --output_mlir_path=$@ --input_shape_and_type=$(MOBILENETV2_INPUT_SHAPE)xf$(FP)
 
-./conversions/converted_mlirs/quartznet_fp$(FP).mlir: ./conversions/quartznet_convert.py
-	python ./conversions/quartznet_convert.py --output_mlir_path=$@ --input_shape_and_type=$(QUARTZNET_INPUT_SHAPE)xf$(FP)
+ifeq ($(APP_NAME), mobilenetv2)
+	INPUT_SHAPE=$(MOBILENETV2_INPUT_SHAPE)
+else ifeq ($(APP_NAME), quartznet)
+	INPUT_SHAPE=$(QUARTZNET_INPUT_SHAPE)
+else ifeq ($(APP_NAME), whisper_tiny)
+	INPUT_SHAPE=$(WHISPER_TINY_INPUT_SHAPE)
+	IREE_ADDITIONAL_COMPILE_FLAGS=--iree-llvmcpu-stack-allocation-limit=65536
+endif
 
-./conversions/converted_mlirs/whisper_tiny_fp$(FP).mlir: ./conversions/whisper_tiny_convert.py
-	python ./conversions/whisper_tiny_convert.py --output_mlir_path=$@ --input_shape_and_type=$(WHISPER_TINY_INPUT_SHAPE)xf$(FP)
 
-all_mlir_conversions_impl: ./conversions/converted_mlirs/mobilenetv2_fp$(FP).mlir ./conversions/converted_mlirs/quartznet_fp$(FP).mlir ./conversions/converted_mlirs/whisper_tiny_fp$(FP).mlir
+.PHONY: convert_mlir compile_vmfb
 
-all_mlir_conversions_fp16: 
-	$(MAKE) FP=16 all_mlir_conversions_impl
+./conversions/converted_mlirs/$(APP_NAME)_fp$(FP).mlir: ./conversions/$(APP_NAME)_convert.py
+	python ./conversions/$(APP_NAME)_convert.py --output_mlir_path=$@ --input_shape_and_type=$(INPUT_SHAPE)xf$(FP)
 
-all_mlir_conversions_fp32: 
-	$(MAKE) FP=32 all_mlir_conversions_impl
+./conversions/compiled_vmfbs/$(APP_NAME)_fp$(FP)_$(OPT_LEVEL).vmfb: ./conversions/converted_mlirs/$(APP_NAME)_fp$(FP).mlir
+	$(IREE_COMPILE) $(IREE_DEFAULT_COMPILE_FLAGS) --iree-opt-level=$(OPT_LEVEL) $(IREE_ADDITIONAL_COMPILE_FLAGS) $(IREE_DEBUG_COMPILE_FLATS) ./conversions/converted_mlirs/$(APP_NAME)_fp$(FP).mlir -o $@
 
-all_mlir_conversions: all_mlir_conversions_fp16 all_mlir_conversions_fp32
 
-./conversions/compiled_vmfbs/mobilenetv2_fp$(FP)_$(OPT_LEVEL).vmfb: ./conversions/converted_mlirs/mobilenetv2_fp$(FP).mlir
-	$(IREE_COMPILE) $(IREE_DEFAULT_COMPILE_FLAGS) --iree-opt-level=$(OPT_LEVEL) $(IREE_DEBUG_COMPILE_FLATS) ./conversions/converted_mlirs/mobilenetv2_fp$(FP).mlir -o $@
+convert_mlir: ./conversions/converted_mlirs/$(APP_NAME)_fp$(FP).mlir
+
+compile_vmfb: ./conversions/compiled_vmfbs/$(APP_NAME)_fp$(FP)_$(OPT_LEVEL).vmfb
+
+convert_mlir_all:
+	$(MAKE) FP=16 APP_NAME=mobilenetv2 convert_mlir
+	$(MAKE) FP=32 APP_NAME=mobilenetv2 convert_mlir
+	$(MAKE) FP=16 APP_NAME=quartznet convert_mlir
+	$(MAKE) FP=32 APP_NAME=quartznet convert_mlir
+	$(MAKE) FP=16 APP_NAME=whisper_tiny convert_mlir
+	$(MAKE) FP=32 APP_NAME=whisper_tiny convert_mlir
+
+
+compile_vmfb_all:
+	$(MAKE) FP=16 APP_NAME=mobilenetv2 compile_vmfb
+	$(MAKE) FP=32 APP_NAME=mobilenetv2 compile_vmfb
+	$(MAKE) FP=16 APP_NAME=quartznet compile_vmfb
+	$(MAKE) FP=32 APP_NAME=quartznet compile_vmfb
+	$(MAKE) FP=16 APP_NAME=whisper_tiny compile_vmfb
+	$(MAKE) FP=32 APP_NAME=whisper_tiny compile_vmfb
+
+
 
